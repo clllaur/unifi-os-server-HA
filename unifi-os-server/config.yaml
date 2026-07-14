@@ -18,16 +18,12 @@ full_access: true
 host_network: true
 apparmor: false
 tmpfs: true
-# UniFi exposes ~15 ports directly on the host via host networking. These
-# entries are informational (host_network ignores port mapping) and drive the
-# "Network" panel documentation only.
-ports_description:
-  443/tcp: UniFi OS Server GUI / API
-  8080/tcp: Device and application communication (inform)
-  3478/udp: STUN (device adoption and remote management)
-  10001/udp: Device discovery (broadcast)
-  10003/udp: Device discovery during adoption
-webui: "https://[HOST]:443"
+# UniFi uses host networking, so it binds its ports (443, 8080, 3478/udp,
+# 10001/udp, 10003/udp, ...) directly on the Home Assistant host. There is no
+# NAT mapping to declare; the full port list is documented in DOCS.md. The
+# webui [PORT:443] token resolves to the internal port (443) under host
+# networking.
+webui: "https://[HOST]:[PORT:443]"
 options:
   UOS_SYSTEM_IP: ""
   HARDWARE_PLATFORM: ""

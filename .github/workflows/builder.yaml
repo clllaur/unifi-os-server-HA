@@ -1,0 +1,44 @@
+name: Build add-on image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "unifi-os-server/**"
+      - ".github/workflows/builder.yaml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - amd64
+          - aarch64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish ${{ matrix.arch }} add-on
+        uses: home-assistant/builder@master
+        with:
+          args: |
+            --${{ matrix.arch }} \
+            --target /data/unifi-os-server \
+            --image "{arch}-addon-unifi-os-server" \
+            --docker-hub "ghcr.io/clllaur" \
+            --addon

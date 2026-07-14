@@ -1,0 +1,11 @@
+# The add-on image is a thin wrapper around the pre-built UniFi OS Server
+# image published by https://github.com/clllaur/unifi-os-server. The tag here
+# must be kept in sync with config.yaml `version` on every release.
+build_from:
+  amd64: ghcr.io/clllaur/unifi-os-server:v1.4.0
+  aarch64: ghcr.io/clllaur/unifi-os-server:v1.4.0
+labels:
+  org.opencontainers.image.title: UniFi OS Server (Home Assistant add-on)
+  org.opencontainers.image.source: https://github.com/clllaur/unifi-os-server-HA
+codenotary:
+  signer: false

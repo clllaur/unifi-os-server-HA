@@ -1,0 +1,38 @@
+name: UniFi OS Server
+version: "1.4.0"
+slug: unifi_os_server
+description: Self-hosted UniFi OS Server running its native systemd stack in a Home Assistant add-on.
+url: https://github.com/clllaur/unifi-os-server-HA/tree/main/unifi-os-server
+image: ghcr.io/clllaur/{arch}-addon-unifi-os-server
+arch:
+  - amd64
+  - aarch64
+init: false
+stage: experimental
+boot: manual
+startup: services
+# UniFi OS Server runs a full systemd service stack, needs raw sockets for
+# device discovery/adoption, and manages its own cgroup hierarchy. This
+# requires a privileged container with AppArmor disabled.
+full_access: true
+host_network: true
+apparmor: false
+tmpfs: true
+# UniFi exposes ~15 ports directly on the host via host networking. These
+# entries are informational (host_network ignores port mapping) and drive the
+# "Network" panel documentation only.
+ports_description:
+  443/tcp: UniFi OS Server GUI / API
+  8080/tcp: Device and application communication (inform)
+  3478/udp: STUN (device adoption and remote management)
+  10001/udp: Device discovery (broadcast)
+  10003/udp: Device discovery during adoption
+webui: "https://[HOST]:443"
+options:
+  UOS_SYSTEM_IP: ""
+  HARDWARE_PLATFORM: ""
+schema:
+  UOS_SYSTEM_IP: str?
+  HARDWARE_PLATFORM: "list(synology)?"
+environment:
+  container: docker

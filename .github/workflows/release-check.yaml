@@ -1,0 +1,112 @@
+name: Check for upstream releases
+
+# Watches the upstream image (ghcr.io/clllaur/unifi-os-server) for a newer
+# semver tag and opens a PR bumping the add-on to match. Merging that PR into
+# main triggers builder.yaml, which publishes the new add-on images.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, an hour after the upstream repo's own release check.
+    - cron: "0 1 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  UPSTREAM_IMAGE: clllaur/unifi-os-server
+
+jobs:
+  release-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve latest upstream tag
+        id: upstream
+        run: |
+          set -euo pipefail
+
+          token=$(curl -fsSL "https://ghcr.io/token?scope=repository:${UPSTREAM_IMAGE}:pull" | jq -r '.token')
+          tags=$(curl -fsSL -H "Authorization: Bearer ${token}" \
+            "https://ghcr.io/v2/${UPSTREAM_IMAGE}/tags/list" | jq -r '.tags[]')
+
+          # Highest full semver tag, e.g. v1.5.0
+          latest_tag=$(echo "${tags}" \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V | tail -1)
+
+          if [ -z "${latest_tag}" ]; then
+            echo "No semver tags found upstream" >&2
+            exit 1
+          fi
+
+          latest_version="${latest_tag#v}"
+          current_version=$(grep -E '^version:' unifi-os-server/config.yaml \
+            | sed -E 's/.*"([^"]+)".*/\1/')
+
+          echo "latest_tag=${latest_tag}"       >> "$GITHUB_OUTPUT"
+          echo "latest_version=${latest_version}" >> "$GITHUB_OUTPUT"
+          echo "current_version=${current_version}" >> "$GITHUB_OUTPUT"
+
+          # Newer only if the max of the two is the upstream one and they differ.
+          newest=$(printf '%s\n%s\n' "${current_version}" "${latest_version}" | sort -V | tail -1)
+          if [ "${latest_version}" != "${current_version}" ] && [ "${newest}" = "${latest_version}" ]; then
+            echo "update=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "update=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "current=${current_version} latest=${latest_version} tag=${latest_tag}"
+
+      - name: Apply version bump
+        if: steps.upstream.outputs.update == 'true'
+        env:
+          LATEST_TAG: ${{ steps.upstream.outputs.latest_tag }}
+          LATEST_VERSION: ${{ steps.upstream.outputs.latest_version }}
+        run: |
+          set -euo pipefail
+
+          # config.yaml: add-on version (matches the published image tag)
+          sed -i -E "s/^version: .*/version: \"${LATEST_VERSION}\"/" unifi-os-server/config.yaml
+
+          # build.yaml: base image tags for both architectures
+          sed -i -E "s#(clllaur/unifi-os-server:)v[0-9]+\.[0-9]+\.[0-9]+#\1${LATEST_TAG}#g" unifi-os-server/build.yaml
+
+          # CHANGELOG.md: prepend a new entry under the top-level heading
+          tmp=$(mktemp)
+          {
+            echo "# Changelog"
+            echo
+            echo "## ${LATEST_VERSION}"
+            echo
+            echo "- Update UniFi OS Server to \`${LATEST_TAG}\`."
+            echo
+            tail -n +2 unifi-os-server/CHANGELOG.md | sed '/^$/{1d}'
+          } > "${tmp}"
+          mv "${tmp}" unifi-os-server/CHANGELOG.md
+
+          echo "Bumped to ${LATEST_VERSION} (${LATEST_TAG})"
+
+      - name: Create pull request
+        if: steps.upstream.outputs.update == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Update UniFi OS Server to ${{ steps.upstream.outputs.latest_version }}"
+          committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          branch: update-uos-${{ steps.upstream.outputs.latest_version }}
+          base: main
+          delete-branch: true
+          title: "Update UniFi OS Server to ${{ steps.upstream.outputs.latest_version }}"
+          body: |
+            Automated bump of the add-on to match the upstream image.
+
+            - Image: `ghcr.io/clllaur/unifi-os-server:${{ steps.upstream.outputs.latest_tag }}`
+            - Add-on version: `${{ steps.upstream.outputs.current_version }}` → `${{ steps.upstream.outputs.latest_version }}`
+
+            Merging this PR triggers the add-on image build.
